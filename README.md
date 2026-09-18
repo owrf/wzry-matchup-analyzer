@@ -1,6 +1,11 @@
 # 王者荣耀对局分析工具
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 给巅峰赛玩家用的**对位分析 + 阵容方向判断**工具。
+
+> 仓库：https://github.com/owrf/wzry-matchup-analyzer
+> 欢迎提 Issue 补充对位数据、纠正英雄标签。
 
 输入双方阵容，它会告诉你：**这局该往哪打、你的对位怎么处理**。
 
