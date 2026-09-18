@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>对局分析工具</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"Microsoft YaHei",system-ui,sans-serif; background:#0f1420; color:#dfe6f2; font-size:14px; }
+  .wrap { display:flex; height:100vh; }
+  .left { width:400px; padding:14px; background:#161d2d; overflow-y:auto; border-right:1px solid #26304a; }
+  .right { flex:1; padding:18px; overflow-y:auto; }
+  h1 { font-size:16px; margin:0 0 12px; color:#7dd3fc; }
+  h2 { font-size:13px; margin:16px 0 8px; color:#94a3b8; font-weight:600;
+       border-bottom:1px solid #26304a; padding-bottom:4px; }
+  .row { display:flex; align-items:center; gap:8px; margin:6px 0; }
+  .row .lane { width:56px; font-size:12px; color:#94a3b8; flex-shrink:0; }
+  input[type=text] {
+    flex:1; background:#0b111c; border:1px solid #2b3852; color:#dfe6f2;
+    border-radius:5px; padding:6px 8px; font-size:13px; font-family:inherit;
+  }
+  input[type=text]:focus { outline:none; border-color:#2563eb; }
+  .side { width:56px; font-size:11px; color:#64748b; text-align:right; flex-shrink:0; }
+  select { flex:1; background:#0b111c; border:1px solid #2b3852; color:#dfe6f2; border-radius:5px; padding:6px 8px; font-size:13px; font-family:inherit; }
+  button { width:100%; margin-top:14px; padding:10px; background:#2563eb; color:#fff;
+           border:0; border-radius:6px; font-size:15px; cursor:pointer; font-family:inherit; }
+  button:hover { background:#1d4ed8; }
+  .mini { font-size:11px; color:#64748b; margin-top:10px; line-height:1.7; }
+  .card { background:#161d2d; border:1px solid #26304a; border-radius:7px; padding:12px; margin-bottom:10px; }
+  .card.enemy { border-left:4px solid #ef4444; } .card.ally { border-left:4px solid #3b82f6; }
+  .card h3 { margin:0 0 6px; font-size:15px; }
+  .badges { margin-bottom:8px; }
+  .tag { display:inline-block; font-size:11px; padding:2px 7px; border-radius:4px; margin:0 4px 4px 0; }
+  .t-tank { background:#14532d; color:#bbf7d0; }
+  .t-init { background:#7c2d12; color:#fed7aa; }
+  .t-mob  { background:#1e3a8a; color:#bfdbfe; }
+  .t-burst{ background:#7f1d1d; color:#fecaca; }
+  .t-range{ background:#4c1d95; color:#ddd6fe; }
+  .sk { margin:6px 0; padding:7px 9px; background:#0b111c; border-radius:5px; }
+  .sk summary { font-size:12.5px; color:#7dd3fc; font-weight:600; cursor:pointer; list-style:none; }
+  .sk summary::-webkit-details-marker { display:none; }
+  .sk .cd { color:#f59e0b; font-weight:400; font-size:11px; margin-left:8px; }
+  .sk .desc { font-size:12.5px; line-height:1.7; color:#cbd5e1; margin-top:7px; white-space:pre-wrap; }
+  .warn { background:#2a1215; border-left:4px solid #ef4444; }
+  .warn h3 { color:#fca5a5; }
+  .empty { color:#475569; text-align:center; margin-top:80px; }
+  .copybar { position:sticky; top:0; background:#0f1420; padding-bottom:10px; display:flex; gap:8px; }
+  .copybar button { width:auto; margin:0; padding:7px 14px; font-size:12px; }
+  .brief { font-size:13px; line-height:1.9; white-space:pre-wrap; }
+  .hintline { font-size:11px; color:#64748b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:6px; }
+  ol { margin:6px 0 0 18px; padding:0; } li { margin:4px 0; line-height:1.6; font-size:13px; }
+  .ai-box { background:#101a2e; border:1px solid #2b4a7a; border-radius:7px; padding:12px; margin-bottom:10px; }
+  .ai-box h3 { margin:0 0 8px; font-size:14px; color:#7dd3fc; }
+  .ai-out { font-size:13px; line-height:1.8; white-space:pre-wrap; color:#dbeafe; }
+  .ai-btn { width:auto; margin:0 8px 0 0; padding:8px 14px; font-size:13px; background:#0891b2; }
+  .ai-btn:hover { background:#0e7490; }
+  .ai-btn:disabled { background:#334155; cursor:wait; }
+  #fixBox button { margin-top:6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="left">
+    <h1>对局分析工具</h1>
+
+    <h2>敌方阵容（按分路填）</h2>
+    <div id="enemyRows"></div>
+
+    <h2>我方阵容（可留空）</h2>
+    <div id="allyRows"></div>
+
+    <h2>我玩什么</h2>
+    <div class="row">
+      <span class="lane">位置</span>
+      <select id="myLane"><option value="">（选位置）</option></select>
+    </div>
+    <div class="row">
+      <span class="lane">英雄</span>
+      <input type="text" id="myHero" list="dl_my" placeholder="如 狂铁" autocomplete="off">
+      <datalist id="dl_my"></datalist>
+    </div>
+
+    <button id="go">分析（Ctrl+Enter）</button>
+
+    <div id="aiStatusBox" style="margin-top:12px;padding:10px;background:#0b111c;border:1px solid #2b3852;border-radius:6px;font-size:12px;line-height:1.7;color:#f59e0b">
+      <span id="aiBadgeStatic">检查中…</span>
+      <button onclick="openSettings()" style="width:auto;margin:8px 0 0;padding:4px 12px;font-size:11px;background:#475569">⚙️ 设置 API Key</button>
+    </div>
+
+    <div class="mini">
+      数据源：官网技能原文｜132 英雄<br>
+      输入框会按分路提示可选英雄<br>
+      名字可简写：凯/元坦/元射/六耳
+    </div>
+  </div>
+  <div class="right" id="out"><div class="empty">填完左边 → 点「分析」</div></div>
+</div>
+
+<script src="herodata.js"></script>
+<script src="lanedata.js"></script>
+<script src="herotags.js"></script>
+<script src="matchups.js"></script>
+<script src="promptdata.js"></script>
+<script>
+// ==================== 后端地址配置（本地 / 线上通用）====================
+let API_BASE = localStorage.getItem("apiBase") || "";   // 空 = 同源
+function setApiBase(v){
+  const s = (v||"").trim().replace(/\/+$/,"");
+  localStorage.setItem("apiBase", s);
+  API_BASE = s;
+}
+async function api(path, opts){ return fetch(API_BASE + path, opts); }
+// ==================== 数据 ====================
+const DATA = window.HERO_DATA || {};
+const TAGS = window.HERO_TAGS || {};
+const MU   = window.MATCHUPS || {};
+const LANE = window.LANE_DATA || { lanes:{}, heroLane:{} };
+const LANES = ["对抗路","打野","中路","发育路","游走"];
+const NAMES = Object.keys(DATA).sort((a,b)=>b.length-a.length);
+
+const ALIAS = {
+  "凯":"铠","元流之子":"元流之子(刺客)","元坦":"元流之子(坦克)","元射":"元流之子(射手)",
+  "元辅":"元流之子(辅助)","元刺":"元流之子(刺客)","元法":"元流之子(法师)",
+  "六耳":"心魔六耳","心魔":"心魔六耳","老虎":"裴擒虎","鸟人":"云中君",
+  "猫":"沈梦溪","猫咪":"沈梦溪","猴":"孙悟空","猴子":"孙悟空","罗刹":"卢雅那",
+};
+function resolveName(s){
+  s=(s||"").trim(); if(!s) return "";
+  if(DATA[s]) return s;
+  if(ALIAS[s]&&DATA[ALIAS[s]]) return ALIAS[s];
+  const t=s.replace(/\s+/g,"");
+  if(DATA[t]) return t;
+  if(ALIAS[t]&&DATA[ALIAS[t]]) return ALIAS[t];
+  const hit=NAMES.filter(n=>n.startsWith(t));
+  if(hit.length===1) return hit[0];
+  return "?"+s;
+}
+function tag(n){ return TAGS[n]||{role:"?",dmg:"?",can:"?",mob:"?",tank:"?",spike:"?",line:"?",note:"（无标签）"}; }
+function val(id){ const el=document.getElementById(id); return el?el.value:""; }
+
+// ==================== 对位查询（纯查表，不做任何计算） ====================
+// 返回 { verdict, why, source }  —— source 标明信息来自哪个英雄的条目
+function lookup(myName, foeName){
+  if(!myName || !foeName) return null;
+  const my = MU[myName], foe = MU[foeName];
+  // ① 看我的条目
+  if(my){
+    if(my.win && my.win[foeName])  return { verdict:"win",  why:my.win[foeName],  source:myName };
+    if(my.lose && my.lose[foeName])return { verdict:"lose", why:my.lose[foeName], source:myName };
+    if(my.even && my.even[foeName]) return { verdict:"even", why:my.even[foeName], source:myName };
+  }
+  // ② 反查对方条目
+  if(foe){
+    if(foe.lose && foe.lose[myName]) return { verdict:"win",  why:foe.lose[myName], source:foeName };
+    if(foe.win && foe.win[myName])   return { verdict:"lose", why:foe.win[myName],  source:foeName };
+    if(foe.even && foe.even[myName]) return { verdict:"even", why:foe.even[myName], source:foeName };
+  }
+  return null;
+}
+
+function verdictLine(lane, r){
+  if(!r) return null;
+  if(lane==="打野"){
+    if(r.verdict==="win")  return "→ **我方打野更强，可以进对面野区**";
+    if(r.verdict==="lose") return "→ **对面打野更强，守好自家野区别被反**";
+    return "→ 野区均势，看谁先动、谁有辅助跟";
+  }
+  if(lane==="游走"){
+    if(r.verdict==="win")  return "→ **我方辅助更强，可主动做视野/开团**";
+    if(r.verdict==="lose") return "→ **对面辅助更强，注意视野被压、别被强开**";
+    return "→ 辅助均势";
+  }
+  if(lane==="中路"){
+    if(r.verdict==="win")  return "→ **我方中路优线，可先动支援**";
+    if(r.verdict==="lose") return "→ **对面中路优线，退守补刀别硬抢**";
+    return "→ 中路均势，看谁先清完";
+  }
+  if(lane==="发育路"){
+    if(r.verdict==="win")  return "→ **我方优线，可压塔控资源**";
+    if(r.verdict==="lose") return "→ **对面优线，单人抗压，让辅助走**";
+    return "→ 平线，看辅助跟不跟";
+  }
+  // 对抗路
+  if(r.verdict==="win")  return "→ **我能压线**（压线要防打野）";
+  if(r.verdict==="lose") return "→ **抗压**：做布甲鞋，补好尾刀，叫打野";
+  return "→ **平线**：谁也压不住谁，靠支援和团战";
+}
+
+// 一条对位关系的完整输出
+function matchupBlock(lane, myName, foeName){
+  const f=tag(foeName);
+  const L=[];
+  L.push(`**对位：${foeName}**（${f.role}／${f.dmg}伤／${f.mob==="高"?"高机动":f.mob==="低"?"低机动":"中机动"}／强势期：${f.spike}）`);
+  L.push(`> ${f.note}`);
+  const r = myName ? lookup(myName, foeName) : null;
+  if(r){
+    L.push(`【数据库判定：${r.verdict==="win"?"我打得过":r.verdict==="lose"?"他打得过我":"平线"}】　*（来自「${r.source}」的条目）*`);
+    L.push(`　${r.why}`);
+    L.push(verdictLine(lane, r));
+  } else if(myName){
+    L.push(`❓ **数据库里没有「${myName} vs ${foeName}」这条对位关系**`);
+    L.push(`　已记录的信息：`);
+    L.push(`　· 对面：${f.note}`);
+    const m=tag(myName);
+    L.push(`　· 你：${m.note}`);
+    L.push(`　打完之后把这条对位告诉我，我加进数据库。`);
+  }
+  return L;
+}
+
+// ==================== 阵容分析（只用数据库字段） ====================
+function windowStrength(list){
+  const t=list.map(x=>tag(x.name));
+  return {
+    early:t.filter(x=>x.spike==="前期"||x.spike==="前中期").length,
+    mid:t.filter(x=>x.spike==="中期").length,
+    late:t.filter(x=>x.spike==="后期"||x.spike==="中后期").length,
+  };
+}
+function compType(list){
+  const t=list.map(x=>tag(x.name));
+  const out=[];
+  const tanks=t.filter(x=>x.tank==="高").length;
+  const inits=t.filter(x=>x.can==="能").length;
+  const mob=t.filter(x=>x.mob==="高").length;
+  if(tanks>=2) out.push("双前排（耐打）");
+  else if(tanks===1) out.push("单前排");
+  else out.push("⚠️ 无前排（后期团战会崩）");
+  if(inits>=3) out.push("强开团多");
+  else if(inits<=1) out.push("⚠️ 缺开团");
+  if(mob>=3) out.push("高机动");
+  if(t.some(x=>x.dmg==="真伤")) out.push("有真伤");
+  return out;
+}
+function enemyWeakpoints(enemy){
+  const out=[];
+  enemy.forEach(e=>{
+    const t=tag(e.name);
+    const w=[];
+    if(t.tank==="低") w.push("脆皮");
+    if(t.mob==="低") w.push("机动差");
+    if(t.can==="不能") w.push("不能主动开团");
+    if(t.spike==="后期") w.push("前期弱");
+    if(w.length>=2) out.push({ lane:e.lane, who:e.name, why:w.join("、") });
+  });
+  return out;
+}
+
+// ==================== 主分析 ====================
+function analyze(){
+  const enemy=LANES.map(l=>({lane:l,name:resolveName(val("e_"+l))})).filter(x=>x.name&&!x.name.startsWith("?"));
+  const ally =LANES.map(l=>({lane:l,name:resolveName(val("a_"+l))})).filter(x=>x.name&&!x.name.startsWith("?"));
+  const out=document.getElementById("out");
+  if(!enemy.length){ out.innerHTML='<div class="empty">至少填敌方阵容</div>'; return; }
+
+  let myLane=val("myLane");
+  const myHeroRaw=val("myHero").trim();
+  const myHero=myHeroRaw?resolveName(myHeroRaw):"";
+  if(!myLane&&myHero) myLane=(LANE.heroLane[myHero]||[])[0]||"";
+
+  let html=`<div class="copybar"><button onclick="window.print()">打印</button><button onclick="copyBrief()">复制简报</button><button onclick="openSettings()" style="background:#475569">⚙️ 设置</button><span id="aiBadge" style="font-size:12px;color:#64748b;align-self:center;margin-left:auto"></span></div>`;
+
+  // ① 双方强度
+  const eW=windowStrength(enemy), aW=windowStrength(ally);
+  html+=`<h2>【一】双方强度</h2><div class="card"><div class="brief">`;
+  html+=`<b>敌方</b>：${enemy.map(e=>e.name).join("、")}\n　类型：${compType(enemy).join("；")}\n　时间窗：前期 ${eW.early}　中期 ${eW.mid}　后期 ${eW.late}\n`;
+  if(ally.length){
+    html+=`\n<b>我方</b>：${ally.map(a=>a.name).join("、")}\n　类型：${compType(ally).join("；")}\n　时间窗：前期 ${aW.early}　中期 ${aW.mid}　后期 ${aW.late}\n`;
+    html+=`\n<b>时间站在谁那边：</b>`;
+    if(aW.early-eW.early>=2) html+=`**我方** → 前中期必须打出优势，别拖过 15 分钟`;
+    else if(eW.early-aW.early>=2) html+=`**敌方** → 守线发育等装备`;
+    else html+=`基本持平 → 看团战执行`;
+    html+=`\n`;
+  }
+  html+=`</div></div>`;
+
+  // ② 逐位对位（全部查数据库）
+  html+=`<h2>【二】逐位对位（查对位数据库）</h2><div class="card"><div class="brief">`;
+  const rel={};
+  LANES.forEach(l=>{
+    const e=enemy.find(x=>x.lane===l), a=ally.find(x=>x.lane===l);
+    if(e&&a){
+      const r=lookup(a.name, e.name);
+      rel[l]=r;
+      html+=`<b>${l}：${a.name} vs ${e.name}</b>\n`;
+      if(r){
+        html+=`　判定：${r.verdict==="win"?"✅ 我方占优":r.verdict==="lose"?"⚠️ 对方占优":"➖ 平线"}　*（来自「${r.source}」）*\n`;
+        html+=`　理由：${r.why}\n`;
+        html+=`　${verdictLine(l, r)}\n\n`;
+      } else {
+        html+=`　❓ 数据库未记录这条对位 → **这局打完告诉我结果，我补上**\n\n`;
+      }
+    } else if(e){
+      html+=`<b>${l}：对面 ${e.name}</b>（我方未填）\n\n`;
+    }
+  });
+  html+=`</div></div>`;
+
+  // ③ 半图分析（基于查表得到的对位关系，不用计算）
+  html+=`<h2>【三】半图分析</h2><div class="card"><div class="brief">`;
+  if(ally.length){
+    const judge = lanes => {
+      const rs = lanes.map(l=>rel[l]).filter(Boolean);
+      const known = rs.length;
+      const w = rs.filter(r=>r.verdict==="win").length;
+      const lo = rs.filter(r=>r.verdict==="lose").length;
+      return { known, w, lo, need: lanes.length };
+    };
+    const dev = judge(["中路","打野","发育路","游走"]);
+    const clash = judge(["中路","打野","对抗路"]);
+    const fmt = (x) => x.known < x.need
+      ? `（只查到 ${x.known}/${x.need} 条对位，数据不足）`
+      : x.w>x.lo ? `**我方占优**（${x.w} 优 / ${x.lo} 劣）`
+      : x.lo>x.w ? `**敌方占优**（${x.w} 优 / ${x.lo} 劣）`
+      : `均势（${x.w} 优 / ${x.lo} 劣）`;
+    html+=`<b>发育路半图（中野射辅）</b>：${fmt(dev)}\n\n`;
+    html+=`<b>对抗路半图（中野边）</b>：${fmt(clash)}\n\n`;
+    html+=`<b>综合 → 强势半图在：</b>`;
+    const d = dev.known>=4 && dev.w>dev.lo, c = clash.known>=3 && clash.w>clash.lo;
+    const dl = dev.known>=4 && dev.lo>dev.w, cl = clash.known>=3 && clash.lo>clash.w;
+    if(d&&c) html+=`**两片都占优** → 看敌方弱点选突破口`;
+    else if(d&&!c) html+=`**发育路半图（中野射辅）** → 打下半图节奏`;
+    else if(c&&!d) html+=`**对抗路半图（中野边）** → 打上半图节奏`;
+    else if(dl&&cl) html+=`**两片都不占优** → 守线发育，抓失误（别主动开团）`;
+    else html+=`数据不足或均势 → 靠线权和抓人打开局面`;
+    html+=`\n`;
+  } else {
+    html+=`（我方未填，无法判断半图）\n`;
+  }
+  html+=`</div></div>`;
+
+  // ④ 突破口 & 怎么赢
+  html+=`<h2>【四】突破口 & 这局怎么赢</h2><div class="card"><div class="brief">`;
+  const wp=enemyWeakpoints(enemy);
+  html+=`<b>敌方弱点（按英雄标签）：</b>\n`;
+  html+= wp.length ? wp.map(w=>`　· ${w.lane}｜${w.who}：${w.why}`).join("\n") : "　· 没找到明显弱点";
+  html+=`\n\n<b>这局的赢法：</b>\n`;
+  const win=[];
+  if(rel["打野"]){
+    if(rel["打野"].verdict==="win") win.push("打野占优 → **前期可以进对面野区**，压他发育");
+    else if(rel["打野"].verdict==="lose") win.push("打野劣势 → **守好自家野区**，别被反");
+  }
+  if(rel["中路"]){
+    if(rel["中路"].verdict==="win") win.push("中路优线 → 先动支援，配合打野抢资源");
+    else if(rel["中路"].verdict==="lose") win.push("中路劣势 → 别硬抢，跟打野走，用人数换节奏");
+  }
+  if(ally.length){
+    const devW=["中路","打野","发育路","游走"].map(l=>rel[l]).filter(Boolean);
+    const clashW=["中路","打野","对抗路"].map(l=>rel[l]).filter(Boolean);
+    if(devW.filter(r=>r.verdict==="win").length > devW.filter(r=>r.verdict==="lose").length)
+      win.push("发育路半图占优 → 围绕下半图打架，控暴君");
+    if(clashW.filter(r=>r.verdict==="win").length > clashW.filter(r=>r.verdict==="lose").length)
+      win.push("对抗路半图占优 → 围绕上半图打架，控主宰");
+  }
+  win.push(`⚠️ 每次进攻前问：赢了这波能换成什么（塔/野区/龙）`);
+  html+=win.length?win.map(x=>"　· "+x).join("\n"):"　（数据不足）";
+  html+=`</div></div>`;
+
+  // ⑤ 我的对位
+  if(myLane){
+    html+=`<h2>【五】我的对位（${myLane}${myHero?"｜"+myHero:""}）</h2><div class="card"><div class="brief">`;
+    const foe=enemy.find(e=>e.lane===myLane);
+    if(foe) html+=matchupBlock(myLane, myHero, foe.name).join("\n");
+    else html+="（对面对应位置没填）";
+    html+=`</div></div>`;
+  } else {
+    html+=`<h2>【五】我的对位</h2><div class="card"><div class="hintline">左边选「我玩什么」就会给具体对位</div></div>`;
+  }
+
+  // ⑥ 简报
+  const brief=`敌方：${LANES.map(l=>{const v=resolveName(val("e_"+l));return v&&!v.startsWith("?")?l+"="+v:"";}).filter(Boolean).join("　")}
+我方：${LANES.map(l=>{const v=resolveName(val("a_"+l));return v&&!v.startsWith("?")?l+"="+v:"";}).filter(Boolean).join("　")||"（未填）"}
+我：${myLane||"（未选）"}${myHero?"｜"+myHero:""}`;
+  // ★ AI 区块
+  const isLocal = location.protocol.startsWith("http");
+  const foeMine = myLane ? enemy.find(e=>e.lane===myLane) : null;
+  html+=`<h2>【六】AI 分析</h2><div class="ai-box">`;
+  if(!isLocal){
+    html+=`<h3>⚠️ 需要从本地服务打开</h3><div class="hintline">现在是用文件打开的，AI 功能要用：双击「启动对局工具.vbs」</div>`;
+  } else {
+    html+=`<h3>🤖 DeepSeek 分析（按需生成，不用预先存 8000 条对位）</h3>`;
+    html+=`<div style="margin-bottom:10px">`;
+    if(myHero && foeMine){
+      html+=`<button class="ai-btn" id="btnMatch" onclick="aiMatchup()">分析对位：${myHero} vs ${foeMine.name}</button>`;
+    }
+    if(ally.length){
+      html+=`<button class="ai-btn" id="btnComp" onclick="aiComp()">分析整局方向</button>`;
+    }
+    html+=`</div><div class="ai-out" id="aiOut">点上面的按钮，AI 会读官方技能原文给出分析（约 3 秒）</div>`;
+  }
+  html+=`</div>`;
+
+  html+=`<h2>【七】复制这段发我</h2><div class="card"><div class="brief" id="brief">${brief}</div></div>`;
+
+  window.__ctx = { enemy, ally, myLane, myHero };
+
+  out.innerHTML=html;
+}
+function copyBrief(){ const b=document.getElementById("brief"); if(b) navigator.clipboard.writeText(b.innerText).then(()=>alert("已复制")); }
+
+// ==================== AI 直连（Key 只在浏览器，不上传）====================
+// 隐私设计：Key 存在 localStorage，请求直接从浏览器发往 AI 服务商，
+//          不经过任何中间服务器。
+
+// 读取 Key（只从浏览器本地读）
+function getLocalKey(){ return localStorage.getItem("aiKey") || ""; }
+function setLocalKey(k){ localStorage.setItem("aiKey", (k||"").trim()); }
+function getAIConfig(){
+  return {
+    baseUrl: localStorage.getItem("aiBaseUrl") || "https://api.deepseek.com",
+    model:   localStorage.getItem("aiModel")   || "deepseek-chat",
+    key:     getLocalKey(),
+  };
+}
+
+// 组装系统提示词（来自 promptdata.js，由 tools/make_promptdata.js 生成）
+function buildSystemPrompt(kind){
+  const P = window.PROMPT_DATA || { profile:"", common:"" };
+  const base = `你是王者荣耀的高分教练。给下面这位玩家做对局指导。
+
+${P.profile}
+
+${P.common}
+
+# 硬性要求
+1. **严格依据给出的官方技能原文**，不编造数值或机制。
+2. **严格区分三件事**：线权（谁能推线）、换血（谁吃亏）、击杀（能不能单杀）。
+3. **如果双方都杀不死对方，必须明确说"平线"**，不要硬分优劣。
+4. 结论要**具体到操作**（几级做什么、该退还是该压、出什么过渡装）。
+5. **不要给依赖队友配合的方案**，优先"能自己完成"的打法。
+6. 不确定就说不确定，不要瞎猜。
+`;
+  if(kind === "match") return base + `
+输出格式（严格遵守，不要额外段落）：
+【判定】平线 / 我占优 / 我劣势
+【线权】一句话
+【换血】一句话
+【击杀】一句话
+【对线怎么打】2-4条
+【关键时间点】一句话`;
+  return base + `
+半图定义提醒：**发育路半图 = 中路+打野+发育路+游走**；**对抗路半图 = 中路+打野+对抗路**。
+
+输出格式（严格遵守）：
+【强势半图】哪一片，为什么
+【中轴线权】谁先动
+【突破口】敌方最薄弱的位置
+【这局怎么赢】3-4条（必须是自己能独立完成的）
+【我的对位】如果有指定英雄，给对线要点`;
+}
+
+// 组装某英雄的资料卡（从本地数据读，不外传）
+function heroBriefLocal(name){
+  const h = DATA[name], t = TAGS[name] || {};
+  if(!h) return `### ${name}\n（数据库里没有这个英雄）`;
+  const skills = (h.skills||[]).map(s=>`  ${s.slot}｜${s.name}（冷却 ${s.cd||"—"}）：${s.desc}`).join("\n");
+  return `### ${name}
+标签：定位=${t.role||"?"}　伤害=${t.dmg||"?"}　能否主动开团=${t.can||"?"}　机动=${t.mob||"?"}　坦度=${t.tank||"?"}　强势期=${t.spike||"?"}　线权=${t.line||"?"}
+机制笔记：${t.note||"（无）"}
+官方技能原文：
+${skills}`;
+}
+function existingLocal(a,b){
+  const my = MU[a];
+  if(!my) return "（没有这个英雄的条目）";
+  if(my.win && my.win[b])   return `已记录：${a} 打得过 ${b} —— ${my.win[b]}`;
+  if(my.lose && my.lose[b]) return `已记录：${a} 打不过 ${b} —— ${my.lose[b]}`;
+  if(my.even && my.even[b]) return `已记录：平线 —— ${my.even[b]}`;
+  return "（没有这两个英雄的对位记录）";
+}
+
+// ★ 直连 AI 服务商（Key 不过我们的服务器）
+async function callAIDirect(system, user, maxTokens){
+  const c = getAIConfig();
+  if(!c.key) return { error:"NO_KEY" };
+  try{
+    const r = await fetch(c.baseUrl.replace(/\/+$/,"") + "/chat/completions", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json", "Authorization":"Bearer " + c.key },
+      body: JSON.stringify({
+        model: c.model,
+        messages:[{role:"system",content:system},{role:"user",content:user}],
+        temperature:0.3, max_tokens:maxTokens||1200,
+      }),
+    });
+    const j = await r.json();
+    if(j.error) return { error: j.error.message || JSON.stringify(j.error) };
+    return { text: j.choices[0].message.content, usage: j.usage };
+  }catch(e){
+    return { error: "直连失败：" + e.message + "（可能是网络问题，或该服务商不允许浏览器直连）" };
+  }
+}
+
+// ==================== AI 调用 + 本地规则引擎（无 key 也能用）====================
+let AI_AVAILABLE = null;
+
+async function checkAI(){
+  if(AI_AVAILABLE !== null) return AI_AVAILABLE;
+  try{
+    const r = await api("/api/status");
+    const j = await r.json();
+    AI_AVAILABLE = !!j.hasKey;
+    window.__aiStatus = j;
+  }catch(e){ AI_AVAILABLE = false; }
+  return AI_AVAILABLE;
+}
+
+// ---------- 本地规则引擎（不联网，纯查表 + 语义判断）----------
+function localMatchup(myName, foeName, lane){
+  const m = tag(myName), f = tag(foeName);
+  const L = [];
+  // 1) 先看对位数据库有没有
+  const r = lookup(myName, foeName);
+  if(r){
+    L.push(`【判定】${r.verdict==="win"?"我占优":r.verdict==="lose"?"我劣势":"平线"}　（来自数据库「${r.source}」）`);
+    L.push(`【理由】${r.why}`);
+  } else {
+    // 2) 没有就做语义对比（不用分数，只说事实）
+    const good=[], bad=[];
+    if(m.dmg==="真伤") good.push("你有真伤，无视对方护盾");
+    if(f.dmg==="真伤") bad.push("对方有真伤，你的护盾无效");
+    if(m.tank==="高"&&f.tank!=="高") good.push(`你更肉（${m.tank} vs ${f.tank}）`);
+    if(f.tank==="高"&&m.tank!=="高") bad.push(`对方更肉（${f.tank} vs ${m.tank}）`);
+    if(m.mob==="高"&&f.mob!=="高") good.push("你机动更高");
+    if(f.mob==="高"&&m.mob!=="高") bad.push("对方机动更高，难追");
+    if(f.mob==="低") good.push("对方机动差，被压跑不掉");
+    if(m.can==="能"&&f.can!=="能") good.push("你能主动开团，对方不能");
+    if(f.can==="能"&&m.can!=="能") bad.push("对方能主动开团，你不能");
+    if(["战士","坦克"].includes(m.role)&&["刺客","法师","法刺"].includes(f.role)) good.push(`正面作战你更强（${m.role} vs ${f.role}）`);
+    if(["刺客","法师","法刺"].includes(m.role)&&["战士","坦克"].includes(f.role)) bad.push(`正面作战对方更强（${f.role} vs ${m.role}）`);
+    // 线权
+    const lv={S:3,A:2,B:1,C:0};
+    const dl=(lv[m.line]??1)-(lv[f.line]??1);
+    if(dl>=1) good.push(`线权你更好（${m.line} vs ${f.line}）`);
+    else if(dl<=-1) bad.push(`线权对方更好（${f.line} vs ${m.line}）`);
+    L.push(`【判定】❓ 数据库没记录 → 下面是按标签的对比，**不是定论**`);
+    if(good.length) L.push(`【你的优势】${good.join("；")}`);
+    if(bad.length) L.push(`【对方优势】${bad.join("；")}`);
+    L.push(`【提示】数据不足。这局打完点下面的「修正」，把实际结果存进数据库。`);
+  }
+  // 双方标签表
+  L.push(`\n【数据对照】`);
+  L.push(`　你（${myName}）：${m.role}／${m.dmg}伤／开团=${m.can}／机动=${m.mob}／坦度=${m.tank}／强势期=${m.spike}／线权=${m.line}`);
+  L.push(`　敌（${foeName}）：${f.role}／${f.dmg}伤／开团=${f.can}／机动=${f.mob}／坦度=${f.tank}／强势期=${f.spike}／线权=${f.line}`);
+  L.push(`\n【对方机制】${f.note}`);
+  L.push(`【你的机制】${m.note}`);
+  // 玩法方向
+  const tips=[];
+  if(f.can==="不能") tips.push("对方不能主动开团/抓人 → 他不会主动来找你（但要防对面打野和辅助）");
+  if(f.dmg==="真伤") tips.push("对方是真伤 → 别指望护盾和护甲，靠走位和换血");
+  if(f.tank==="高") tips.push("对方坦度高 → 别指望单杀，靠换血和支援");
+  if(f.mob==="低"&&!["辅助"].includes(f.role)) tips.push("对方机动差 → 压线后他跑不掉，但要防打野");
+  if(f.mob==="高") tips.push("对方机动高 → 别追深，除非他交了位移");
+  const first=m.spike==="前期"||m.spike==="前中期";
+  const ffirst=f.spike==="前期"||f.spike==="前中期";
+  if(first&&!ffirst) tips.push("⚡ 你的强势期在前面 → 前中期必须打出优势，别拖");
+  if(ffirst&&!first) tips.push("⚡ 对方强势期在前面 → 前期别硬拼，守住等装备");
+  if(tips.length) L.push(`\n【对线怎么打（按标签推理）】\n`+tips.map(t=>"　· "+t).join("\n"));
+  L.push(`\n⚠️ 这是**离线规则引擎**的结果，只做标签对比，不如 AI 的机制分析。`);
+  L.push(`　配置 API Key 后可获得基于官方技能原文的分析。`);
+  return L.join("\n");
+}
+
+async function aiMatchup(force){
+  const c=window.__ctx; if(!c) return;
+  const foe=c.enemy.find(e=>e.lane===c.myLane);
+  if(!c.myHero||!foe) return;
+  const out=document.getElementById("aiOut"), btn=document.getElementById("btnMatch");
+  if(btn) btn.disabled=true;
+  window.__mkey={a:c.myHero,b:foe.name,lane:c.myLane};
+
+  const localKey = getLocalKey();
+
+  // ---------- ① 没配 Key：查服务器缓存 → 没有再退回本地规则引擎 ----------
+  if(!localKey){
+    out.textContent = "查询公共缓存…";
+    try{
+      const r = await api(`/api/matchup?a=${encodeURIComponent(c.myHero)}&b=${encodeURIComponent(foe.name)}&lane=${encodeURIComponent(c.myLane)}&cacheonly=1`);
+      const j = await r.json();
+      if(j && j.text){
+        out.textContent = (j.source==="user" ? `📌 这条是验证过的（${j.createdAt||""}）\n\n` : `⚡ 来自公共缓存（${j.createdAt||""}）\n\n`) + j.text;
+        ensureFixBox(); if(btn) btn.disabled=false; return;
+      }
+    }catch(e){ /* 服务器不可用就继续 */ }
+    out.textContent = "⚠️ 你还没配置 API Key，公共缓存里也没有这个对位\n\n（去「设置」填 Key 就能用 AI）\n\n"
+      + "──────── 以下是本地规则引擎（离线）────────\n\n"
+      + localMatchup(c.myHero, foe.name, c.myLane);
+    ensureFixBox(); if(btn) btn.disabled=false; return;
+  }
+
+  // ---------- ② 有 Key：先看缓存（省钱），force 时跳过 ----------
+  if(!force){
+    try{
+      const r = await api(`/api/matchup?a=${encodeURIComponent(c.myHero)}&b=${encodeURIComponent(foe.name)}&lane=${encodeURIComponent(c.myLane)}&cacheonly=1`);
+      const j = await r.json();
+      if(j && j.text){
+        out.textContent = (j.source==="user" ? `📌 这条是验证过的（${j.createdAt||""}）\n\n` : `⚡ 来自公共缓存（${j.createdAt||""}）\n\n`) + j.text;
+        ensureFixBox(); if(btn) btn.disabled=false; return;
+      }
+    }catch(e){ /* 忽略，继续走直连 */ }
+  }
+
+  // ---------- ③ 浏览器直连 AI（Key 不经过我们的服务器）----------
+  out.textContent = "🔒 正在直连 AI（你的 Key 只在本地，不会上传）…";
+  const prompt = `分路：${c.myLane}
+对位：**${c.myHero}（我） vs ${foe.name}（对面）**
+
+${heroBriefLocal(c.myHero)}
+
+${heroBriefLocal(foe.name)}
+
+${existingLocal(c.myHero, foe.name)}
+
+按格式分析。`;
+  const res = await callAIDirect(buildSystemPrompt("match"), prompt, 1200);
+  if(res.error === "NO_KEY"){
+    out.textContent = "⚠️ 没读到本地 Key，请去「设置」重新填写";
+    if(btn) btn.disabled=false; return;
+  }
+  if(res.error){
+    out.textContent = "❌ " + res.error + "\n\n──────── 本地规则引擎（离线）────────\n\n" + localMatchup(c.myHero, foe.name, c.myLane);
+    ensureFixBox(); if(btn) btn.disabled=false; return;
+  }
+  out.textContent = `🆕 刚由 AI 生成（🔒 直连，Key 未上传）\n\n` + res.text
+    + (res.usage?`\n\n（用量 ${res.usage.total_tokens} tokens）`:"");
+  ensureFixBox();
+  if(btn) btn.disabled=false;
+
+  // ---------- ④ 后台把结果分享到公共库（只传文本，不含 Key）----------
+  if(localStorage.getItem("shareResults") !== "0"){
+    api("/api/share",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({a:c.myHero,b:foe.name,lane:c.myLane,text:res.text,tokens:res.usage&&res.usage.total_tokens})})
+      .catch(()=>{});
+  }
+}
+
+// 修正结论（写入共享数据库）
+async function fixMatchup(){
+  const k=window.__mkey; if(!k) return;
+  const out=document.getElementById("aiOut");
+  const v=prompt("实际打起来是什么情况？\n（覆盖结论，下次同样对位直接调用你的；会共享给其他人）\n\n现在说的：\n"+out.textContent.slice(0,300));
+  if(!v) return;
+  try{
+    const r=await api("/api/correct",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({a:k.a,b:k.b,lane:k.lane,text:"【实际】"+v})});
+    const j=await r.json();
+    out.textContent = j.ok ? ("✅ 已存进共享数据库：\n\n【实际】"+v+"\n\n下次遇到同样对位会直接调用这条（你和别人都不用再问 AI）。") : "❌ 保存失败";
+  }catch(e){ out.textContent="❌ 保存失败："+e.message }
+}
+
+function ensureFixBox(){
+  if(document.getElementById("fixBox")) return;
+  const out=document.getElementById("aiOut");
+  const fix=document.createElement("div");
+  fix.id="fixBox"; fix.style.marginTop="10px";
+  fix.innerHTML='<button class="ai-btn" onclick="fixMatchup()">✏️ 修正这条结论</button>'
+    +'<button class="ai-btn" style="background:#475569" onclick="aiMatchup(true)">🔄 重新生成（消耗 token）</button>';
+  out.parentNode.appendChild(fix);
+}
+
+// 整局方向分析
+async function aiComp(){
+  const c=window.__ctx; if(!c||!c.ally.length) return;
+  const out=document.getElementById("aiOut"), btn=document.getElementById("btnComp");
+  if(btn) btn.disabled=true;
+  const localKey=getLocalKey();
+  if(!localKey){
+    out.textContent = "⚠️ 整局方向分析需要 API Key（去「设置」填）\n\n"
+      + "（上面的「客观信息」里已经有本地算出的半图强弱、突破口、这局怎么赢，可以直接看那个）";
+    if(btn) btn.disabled=false; return;
+  }
+  out.textContent="🔒 正在直连 AI（Key 不上传）…";
+  const fmt=l=>l.map(x=>`${x.lane}=${x.name}`).join("　");
+  const prompt=`敌方阵容：${fmt(c.enemy)}
+我方阵容：${fmt(c.ally)}
+我玩：${(c.myLane||"")}${c.myHero?"｜"+c.myHero:""}
+
+${c.enemy.map(x=>heroBriefLocal(x.name)).join("\n\n")}
+
+${c.ally.map(x=>heroBriefLocal(x.name)).join("\n\n")}
+
+按格式分析这局。`;
+  const res = await callAIDirect(buildSystemPrompt("comp"), prompt, 1500);
+  out.textContent = res.error ? ("❌ "+res.error) : (res.text + (res.usage?`\n\n（用量 ${res.usage.total_tokens} tokens）`:""));
+  if(btn) btn.disabled=false;
+}
+
+
+
+
+// ==================== 设置 ====================
+async function openSettings(){
+  const m=document.getElementById("settingsModal");
+  m.style.display="flex";
+  document.getElementById("cfgMsg").textContent="";
+  const lk=getLocalKey();
+  document.getElementById("cfgKey").value="";
+  document.getElementById("cfgKey").placeholder = lk ? "（已设置，留空则不修改）" : "sk-...";
+  document.getElementById("cfgUrl").value = localStorage.getItem("aiBaseUrl") || "https://api.deepseek.com";
+  document.getElementById("cfgModel").value = localStorage.getItem("aiModel") || "deepseek-chat";
+  document.getElementById("cfgApiBase").value = localStorage.getItem("apiBase") || "";
+  document.getElementById("cfgShare").checked = localStorage.getItem("shareResults") !== "0";
+}
+function closeSettings(){
+  document.getElementById("settingsModal").style.display="none";
+  refreshBadge();
+}
+function saveSettings(){
+  const msg=document.getElementById("cfgMsg");
+  // 🔒 Key 只写 localStorage，绝不发送到任何服务器
+  const k=document.getElementById("cfgKey").value.trim();
+  if(k) setLocalKey(k);
+  localStorage.setItem("aiBaseUrl", document.getElementById("cfgUrl").value.trim() || "https://api.deepseek.com");
+  localStorage.setItem("aiModel",   document.getElementById("cfgModel").value.trim() || "deepseek-chat");
+  setApiBase(document.getElementById("cfgApiBase").value);
+  localStorage.setItem("shareResults", document.getElementById("cfgShare").checked ? "1" : "0");
+  msg.style.color="#22c55e";
+  msg.textContent="✅ 已保存到本地浏览器（Key 没有上传）";
+  refreshBadge();
+}
+// 测试连接：直接从浏览器调 AI，验证 Key 可用
+async function testKey(){
+  const msg=document.getElementById("cfgMsg");
+  const k=document.getElementById("cfgKey").value.trim() || getLocalKey();
+  if(!k){ msg.style.color="#ef4444"; msg.textContent="❌ 请先填 API Key"; return; }
+  msg.style.color="#f59e0b"; msg.textContent="🔒 测试中（浏览器直连，Key 不上传）…";
+  const base=(document.getElementById("cfgUrl").value.trim()||"https://api.deepseek.com").replace(/\/+$/,"");
+  const model=document.getElementById("cfgModel").value.trim()||"deepseek-chat";
+  try{
+    const r=await fetch(base+"/chat/completions",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","Authorization":"Bearer "+k},
+      body:JSON.stringify({model,messages:[{role:"user",content:"只回答两个字：通过"}],max_tokens:10}),
+    });
+    const j=await r.json();
+    if(j.error){ msg.style.color="#ef4444"; msg.textContent="❌ "+j.error.message; return; }
+    msg.style.color="#22c55e";
+    msg.textContent="✅ 连接正常，模型回复："+j.choices[0].message.content+"（用量 "+j.usage.total_tokens+" tokens）";
+  }catch(e){
+    msg.style.color="#ef4444";
+    msg.textContent="❌ 直连失败："+e.message+"（可能是网络问题，或该服务商不允许浏览器直连）";
+  }
+}
+async function refreshBadge(){
+  const els=[document.getElementById("aiBadgeStatic"), document.getElementById("aiBadge")].filter(Boolean);
+  if(!els.length) return;
+  const hasKey = !!getLocalKey();
+  let extra="";
+  try{
+    const r=await api("/api/status"); const j=await r.json();
+    window.__aiStatus=j;
+    extra=`\n英雄 ${j.heroes}　对位记录 ${j.matchupRecords}\n公共缓存 ${j.cacheStats.total} 条`;
+  }catch(e){ extra="\n（共享后端未连接）"; }
+  const txt = (hasKey ? "🔒 AI：已配置（Key 只在本机）" : "AI：未配置 → 用公共缓存 + 本地规则引擎") + extra;
+  els.forEach(el=>{
+    el.textContent = txt;
+    el.style.color = hasKey ? "#22c55e" : "#f59e0b";
+    el.style.whiteSpace = "pre-line";
+  });
+}
+
+document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeSettings(); });
+// ==================== 初始化 ====================
+function buildRows(prefix){
+  const box=document.getElementById(prefix==="e"?"enemyRows":"allyRows");
+  box.innerHTML=LANES.map(l=>`
+    <div class="row">
+      <span class="lane">${l}</span>
+      <input type="text" id="${prefix}_${l}" list="dl_${prefix}_${l}" placeholder="英雄名" autocomplete="off">
+      <datalist id="dl_${prefix}_${l}">${(LANE.lanes[l]||[]).filter(n=>DATA[n]).map(n=>`<option value="${n}">`).join("")}</datalist>
+    </div>`).join("");
+}
+buildRows("e"); buildRows("a");
+(function(){
+  const sel=document.getElementById("myLane");
+  LANES.forEach(l=>{ const o=document.createElement("option"); o.value=l; o.textContent=l; sel.appendChild(o); });
+  const dl=document.getElementById("dl_my");
+  Object.keys(DATA).sort().forEach(n=>{ const o=document.createElement("option"); o.value=n; dl.appendChild(o); });
+})();
+refreshBadge();
+document.getElementById("go").onclick=analyze;
+document.addEventListener("keydown",e=>{ if(e.ctrlKey&&e.key==="Enter") analyze(); });
+</script>
+
+<div id="settingsModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:99;align-items:center;justify-content:center;overflow-y:auto">
+  <div style="background:#161d2d;border:1px solid #2b4a7a;border-radius:10px;padding:24px;width:580px;max-width:92vw;max-height:88vh;overflow-y:auto">
+
+    <h3 style="margin:0 0 12px;color:#7dd3fc">⚙️ 设置</h3>
+
+    <div style="background:#0f2a1a;border-left:3px solid #22c55e;border-radius:5px;padding:10px 12px;margin-bottom:16px;font-size:12px;line-height:1.8;color:#bbf7d0">
+      <b>🔒 你的 API Key 永远不会离开这台电脑</b><br>
+      · Key 只保存在<b>你自己浏览器的 localStorage</b> 里<br>
+      · 分析时<b>浏览器直接连 AI 服务商</b>，不经过我们的服务器<br>
+      · 本工具<b>开源</b>，你可以自己审查代码验证这一点<br>
+      · 随时可在 AI 服务商后台<b>吊销 Key</b>或设额度上限
+    </div>
+
+    <label style="font-size:13px;color:#94a3b8;display:block;margin:0 0 5px">API Key（只存本地，不上传）</label>
+    <input id="cfgKey" type="password" placeholder="sk-..." style="width:100%;margin:0 0 6px">
+    <div style="font-size:11px;color:#64748b;margin-bottom:12px">
+      申请：<a href="https://platform.deepseek.com" target="_blank" style="color:#7dd3fc">platform.deepseek.com</a>
+      　单次分析约 1800 tokens ≈ 0.002 元
+    </div>
+
+    <label style="font-size:13px;color:#94a3b8;display:block;margin:0 0 5px">接口地址</label>
+    <input id="cfgUrl" type="text" placeholder="https://api.deepseek.com" style="width:100%;margin:0 0 14px">
+
+    <label style="font-size:13px;color:#94a3b8;display:block;margin:0 0 5px">模型</label>
+    <input id="cfgModel" type="text" placeholder="deepseek-chat" style="width:100%;margin:0 0 16px">
+
+    <label style="font-size:13px;color:#94a3b8;display:block;margin:0 0 5px">共享后端地址（用来存取公共数据库）</label>
+    <input id="cfgApiBase" type="text" placeholder="留空=本机服务" style="width:100%;margin:0 0 6px">
+    <div style="font-size:11px;color:#64748b;margin-bottom:14px">
+      分析结果会存到这个后端，供所有人共用（只存分析文本，不含 Key）
+    </div>
+
+    <label style="font-size:12px;color:#cbd5e1;display:block;margin-bottom:8px">
+      <input type="checkbox" id="cfgShare" style="width:auto"> 把我的分析结果共享到公共数据库（推荐）
+    </label>
+    <div style="font-size:11px;color:#64748b;margin-bottom:14px">
+      共享内容只有：<b>分析文本 + 英雄组合 + 分路</b>。不含 Key、不含身份信息。<br>
+      好处：别人分析过的对位你能直接用（不花 token）。
+    </div>
+
+    <div id="cfgMsg" style="font-size:12px;color:#f59e0b;margin-bottom:12px;min-height:16px"></div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="ai-btn" onclick="saveSettings()">保存</button>
+      <button class="ai-btn" style="background:#0891b2" onclick="testKey()">测试连接</button>
+      <button class="ai-btn" style="background:#475569" onclick="closeSettings()">关闭</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

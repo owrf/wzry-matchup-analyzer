@@ -1,0 +1,26 @@
+# 配置和密钥
+config.json
+.env
+*.key
+
+# 运行时缓存（人人不同，不入库）
+英雄资料/matchups_ai.json
+
+# 开发工具
+node_modules/
+__pycache__/
+*.pyc
+tools/models/
+tools/probe_*.js
+tools/shot*.js
+tools/test_*.js
+tools/t[_-]*.js
+heroes_raw/
+视频候选/
+视频文字稿/
+*.log
+
+# 系统
+Thumbs.db
+desktop.ini
+.DS_Store
