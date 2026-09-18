@@ -7,6 +7,7 @@ const cfg = require("./config.js");
 const cache = require("./matchup_cache.js");
 const { buildCommonText } = require("./methodology.js");
 const { buildProfileText } = require("./profile.js");
+const { searchMatchup, intelText } = require("./matchup_search.js");
 
 const ROOT = path.join(__dirname, "..");
 const HERO_DIR = path.join(ROOT, "英雄资料");
@@ -187,6 +188,19 @@ ${existing(a, b)}
     return json(res, { ...out, cached: false, source: "ai" });
   }
 
+  // ===== 对位情报搜索（B站 + 中文网页，带来源质量标注）=====
+  if (P === "/api/search") {
+    const a = u.searchParams.get("a"), b = u.searchParams.get("b");
+    if (!a || !b) return json(res, { error: "缺参数" }, 400);
+    try {
+      const r = await searchMatchup(a, b);
+      return json(res, { ok: r.ok, err: r.err, text: intelText(r, a, b),
+                         videos: r.videos.length, pages: r.pages.length });
+    } catch (e) {
+      return json(res, { ok: false, error: e.message });
+    }
+  }
+
   // ===== 分享结果到公共库（前端直连模式下，浏览器把新结果发过来）=====
   // 只接收分析文本，**不接收任何 Key**
   if (P === "/api/share") {
@@ -204,9 +218,20 @@ ${existing(a, b)}
     return readBody(req, async (comp) => {
       if (!comp) return json(res, { error: "请求体无效" }, 400);
       const fmt = (l) => l.map(x => `${x.lane}=${x.name}`).join("　");
+      // ★ 先搜索社区情报（B站 + 网页），减少纯推测
+      let intel = "";
+      try {
+        const me = (comp.me || "").split("｜").pop();
+        const foe = (comp.enemy || []).find(x => x.lane === (comp.me || "").split("｜")[0]);
+        if (me && foe) {
+          const sr = await searchMatchup(me, foe.name);
+          intel = intelText(sr, me, foe.name);
+        }
+      } catch (e) { intel = ""; }
       const prompt = `敌方阵容：${fmt(comp.enemy)}
 我方阵容：${fmt(comp.ally)}
 我玩：${comp.me || "（未指定）"}
+${intel ? "\n" + intel + "\n" : ""}
 
 ${comp.enemy.map(x => heroBrief(x.name)).join("\n\n")}
 
