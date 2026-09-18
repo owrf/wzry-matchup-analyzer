@@ -55,19 +55,21 @@ ${buildCommonText()}
 
 # 硬性要求
 1. **严格依据给出的官方技能原文**，不编造数值或机制。
-2. **严格区分三件事**：线权（谁能推线）、换血（谁吃亏）、击杀（能不能单杀）。
-3. **如果双方都杀不死对方，必须明确说"平线"**，不要硬分优劣。
+2. **严格区分三件事**：线权（谁能推线）、换血（谁吃亏）、逃生/被抓风险（谁更容易被留住）。
+3. **如果双方在机制上谁也留不住谁（都缺乏稳定留人手段），必须明确说"平线"**，不要硬分优劣。
 4. 结论要**具体到操作**（几级做什么、该退还是该压、出什么过渡装）。
 5. **不要给依赖队友配合的方案**（他的分段队友不会兑现），优先"能自己完成"的打法。
-6. 不确定就说不确定，不要瞎猜。
+6. **绝对不要预测"某方能击杀某方"这类结果**——这取决于操作、装备、等级、打野位置，技能原文里没有依据。只描述机制层面的事实。
+7. **区分"事实"和"推测"**：技能原文里写了的 = 事实；你的推断 = 必须标注"（推测）"。
+8. 不确定就说不确定，不要瞎猜。
 `;
 
 const SYS_MATCH = BASE_RULES + `
 输出格式（严格遵守，不要额外段落）：
 【判定】平线 / 我占优 / 我劣势
-【线权】一句话
-【换血】一句话
-【击杀】一句话
+【线权】谁能推线、谁被迫补塔刀
+【换血】谁换血吃亏
+【逃生】谁更容易被抓死、谁更容易留住对方
 【对线怎么打】2-4条
 【关键时间点】一句话`;
 
@@ -231,11 +233,9 @@ ${comp.ally.map(x => heroBrief(x.name)).join("\n\n")}
   if (P === "/api/reload") { reloadData(); return json(res, { ok: true }); }
 
   // ===== 静态 =====
-  // 静态根目录：优先 HERO_DIR（开发布局），回退到项目根（发布布局）
-  const rel = P === "/" ? "/对局分析工具.html" : decodeURIComponent(P);
-  let fp = path.join(HERO_DIR, rel);
-  if (!fs.existsSync(fp)) fp = path.join(ROOT, rel);
-  if (!fp.startsWith(ROOT)) { res.writeHead(403); return res.end("forbidden"); }
+  let p = P === "/" ? "/对局分析工具.html" : decodeURIComponent(P);
+  const fp = path.join(HERO_DIR, p);
+  if (!fp.startsWith(HERO_DIR)) { res.writeHead(403); return res.end("forbidden"); }
   if (!fs.existsSync(fp) || fs.statSync(fp).isDirectory()) { res.writeHead(404); return res.end("not found"); }
   res.writeHead(200, { "Content-Type": MIME[path.extname(fp).toLowerCase()] || "application/octet-stream" });
   fs.createReadStream(fp).pipe(res);
