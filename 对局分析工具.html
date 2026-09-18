@@ -100,6 +100,7 @@
 <script src="herotags.js"></script>
 <script src="matchups.js"></script>
 <script src="promptdata.js"></script>
+<script src="lanepower.js"></script>
 <script>
 // ==================== 后端地址配置（本地 / 线上通用）====================
 let API_BASE = localStorage.getItem("apiBase") || "";   // 空 = 同源
@@ -134,6 +135,20 @@ function resolveName(s){
   if(hit.length===1) return hit[0];
   return "?"+s;
 }
+
+// ==================== 线权查询（只认有依据的）====================
+// 数据源：lanepower.js（由 tools/make_lanepower.js 生成，每条都带 source）
+// ⚠️ T度排行 ≠ 线权。没有来源的英雄一律返回 null，不猜。
+function lineOf(name){
+  const LP = window.LANE_POWER || { hero:{} };
+  const h = (LP.hero || {})[name];
+  return h ? { tier:h.tier, why:h.why, source:h.source } : null;
+}
+function linePair(a, b){
+  const LP = window.LANE_POWER || { pair:{} };
+  return (LP.pair || {})[a + "|" + b] || (LP.pair || {})[b + "|" + a] || null;
+}
+
 function tag(n){ return TAGS[n]||{role:"?",dmg:"?",can:"?",mob:"?",tank:"?",spike:"?",line:"?",note:"（无标签）"}; }
 function val(id){ const el=document.getElementById(id); return el?el.value:""; }
 
@@ -456,7 +471,7 @@ function heroBriefLocal(name){
   if(!h) return `### ${name}\n（数据库里没有这个英雄）`;
   const skills = (h.skills||[]).map(s=>`  ${s.slot}｜${s.name}（冷却 ${s.cd||"—"}）：${s.desc}`).join("\n");
   return `### ${name}
-标签：定位=${t.role||"?"}　伤害=${t.dmg||"?"}　能否主动开团=${t.can||"?"}　机动=${t.mob||"?"}　坦度=${t.tank||"?"}　强势期=${t.spike||"?"}　线权=${t.line||"?"}
+标签：定位=${t.role||"?"}　伤害=${t.dmg||"?"}　能否主动开团=${t.can||"?"}　机动=${t.mob||"?"}　坦度=${t.tank||"?"}　强势期=${t.spike||"?"}${lineOf(name)?"\n线权="+lineOf(name).tier+"（依据："+lineOf(name).source+"）":"\n线权=（**无可靠依据，不要据此判断线权**）"}
 机制笔记：${t.note||"（无）"}
 官方技能原文：
 ${skills}`;
@@ -529,11 +544,21 @@ function localMatchup(myName, foeName, lane){
     if(f.can==="能"&&m.can!=="能") bad.push("对方能主动开团，你不能");
     if(["战士","坦克"].includes(m.role)&&["刺客","法师","法刺"].includes(f.role)) good.push(`正面作战你更强（${m.role} vs ${f.role}）`);
     if(["刺客","法师","法刺"].includes(m.role)&&["战士","坦克"].includes(f.role)) bad.push(`正面作战对方更强（${f.role} vs ${m.role}）`);
-    // 线权
-    const lv={S:3,A:2,B:1,C:0};
-    const dl=(lv[m.line]??1)-(lv[f.line]??1);
-    if(dl>=1) good.push(`线权你更好（${m.line} vs ${f.line}）`);
-    else if(dl<=-1) bad.push(`线权对方更好（${f.line} vs ${m.line}）`);
+    // 线权：只用有依据的数据（T度 ≠ 线权，没依据就不说）
+    const lpPair = linePair(myName, foeName);
+    if(lpPair){
+      const r = lpPair.r || "";
+      if(/对方|他更好|劣势|压制/.test(r)) bad.push(`线权：${r}　*（依据：${lpPair.source}）*`);
+      else good.push(`线权：${r}　*（依据：${lpPair.source}）*`);
+    } else {
+      const lm = lineOf(myName), lf = lineOf(foeName);
+      if(lm && lf) good.push(`线权：你 ${lm.tier} / 对方 ${lf.tier}　*（依据：${lm.source || lf.source}）*`);
+      else if(lm || lf){
+        const who = lm ? `你 ${lm.tier}` : `对方 ${lf.tier}`;
+        good.push(`线权：${who}（只有一方有依据）　*（依据：${(lm||lf).source}）*`);
+      }
+      // 两边都没依据 → 什么都不说，不猜
+    }
     L.push(`【判定】❓ 数据库没记录 → 下面是按标签的对比，**不是定论**`);
     if(good.length) L.push(`【你的优势】${good.join("；")}`);
     if(bad.length) L.push(`【对方优势】${bad.join("；")}`);
@@ -541,8 +566,8 @@ function localMatchup(myName, foeName, lane){
   }
   // 双方标签表
   L.push(`\n【数据对照】`);
-  L.push(`　你（${myName}）：${m.role}／${m.dmg}伤／开团=${m.can}／机动=${m.mob}／坦度=${m.tank}／强势期=${m.spike}／线权=${m.line}`);
-  L.push(`　敌（${foeName}）：${f.role}／${f.dmg}伤／开团=${f.can}／机动=${f.mob}／坦度=${f.tank}／强势期=${f.spike}／线权=${f.line}`);
+  L.push(`　你（${myName}）：${m.role}／${m.dmg}伤／开团=${m.can}／机动=${m.mob}／坦度=${m.tank}／强势期=${m.spike}${lineOf(myName)?"／线权="+lineOf(myName).tier+"（有依据）":"／线权=（无依据）"}`);
+  L.push(`　敌（${foeName}）：${f.role}／${f.dmg}伤／开团=${f.can}／机动=${f.mob}／坦度=${f.tank}／强势期=${f.spike}${lineOf(foeName)?"／线权="+lineOf(foeName).tier+"（有依据）":"／线权=（无依据）"}`);
   L.push(`\n【对方机制】${f.note}`);
   L.push(`【你的机制】${m.note}`);
   // 玩法方向
