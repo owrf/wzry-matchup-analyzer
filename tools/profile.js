@@ -1,54 +1,34 @@
-// 个人档案 —— 每个用户可以改成自己的情况
+// 个人档案（默认模板）
 //
-// ⚠️ 这是唯一应该填个人信息的文件
-// 如果 fork 了本项目，请把下面改成你自己的情况
-// 开源仓库里保留的是"示例"，不是真实用户资料
+// ⚠️ 这里只是**默认示例**。用户在前端「⚙️ 设置 → 我的档案」里填写，
+//    存在浏览器 localStorage，会覆盖这里的默认值。
+//    改这里只是改"新用户的默认值"。
+//
+// 开源仓库里请保留通用示例，不要填真实个人信息。
 
 const PROFILE = {
-  // 你的分段（影响 AI 给的建议）
-  rank: "巅峰赛 1600 分",
-
-  // 你的位置
-  role: "对抗路",
-
-  // 你的英雄池：主力在前
-  heroes: ["狂铁", "李信"],
-
-  // 你不玩的位置（AI 不会给你这些位置的建议）
-  avoid: ["发育路"],
-
-  // 你的打法特点（AI 会据此调整建议）
-  traits: [
-    "基本功扎实，意识超过当前分段",
-    "习惯「我创造机会、队友兑现」的高分打法，但当前分段队友不会兑现",
-  ],
-
-  // 分段修正：高分段经验在低分段会失效的地方
-  rankNotes: [
-    "**压线后不要盲目转线**——低分队友不会接你的节奏，你转过去他可能在打野怪。改成：**压完线直接吃下一个资源**（对面野区/河道之灵/下一波线）",
-    "**不要用高分段的读人模型读低分玩家**——低分玩家是「没逻辑」，不是「有套路」。那个射手敢摸塔，可能只是单纯没意识，不是有反蹲",
-    "**不要指望队友兑现你创造的机会**——你开团，队友可能还在打野。优先选能自己创造、自己兑现的英雄",
-  ],
+  rank: "",          // 例："巅峰赛 1600 分"（留空 = 不告诉 AI 分段）
+  role: "",          // 例："对抗路"
+  heroes: [],        // 例：["狂铁", "李信"]
+  avoid: [],         // 例：["发育路"]
+  traits: [],        // 例：["基本功扎实，但当前分段队友不会兑现机会"]
 };
 
-// 组装成给 AI 的文本
-function buildProfileText() {
-  const P = PROFILE;
+// 服务端组装（本地版用）；前端用的是 promptdata.js 里的版本
+function buildProfileText(P) {
+  const p = P || PROFILE;
   const parts = [];
-  parts.push(`# 服务对象的情况`);
-  if (P.rank) parts.push(`- 分段：**${P.rank}**`);
-  if (P.role) parts.push(`- 主玩位置：**${P.role}**`);
-  if (P.heroes && P.heroes.length) parts.push(`- 英雄池（主力在前）：**${P.heroes.join("、")}**`);
-  if (P.avoid && P.avoid.length) parts.push(`- 不玩的位置：${P.avoid.join("、")}（不要给这些位置的建议）`);
-  if (P.traits && P.traits.length) {
-    parts.push(`- 打法特点：`);
-    P.traits.forEach(t => parts.push(`  - ${t}`));
+  const has = (p.rank || p.role || (p.heroes||[]).length || (p.avoid||[]).length || (p.traits||[]).length);
+  if (!has) return "";   // 什么都没填就不加这段
+  parts.push("# 服务对象的情况");
+  if (p.rank)   parts.push("- 分段：**" + p.rank + "**");
+  if (p.role)   parts.push("- 主玩位置：**" + p.role + "**");
+  if (p.heroes && p.heroes.length) parts.push("- 英雄池（主力在前）：**" + p.heroes.join("、") + "**");
+  if (p.avoid && p.avoid.length)   parts.push("- 不玩的位置：" + p.avoid.join("、") + "（不要给这些位置的建议）");
+  if (p.traits && p.traits.length) {
+    parts.push("- 打法特点：");
+    p.traits.forEach(t => parts.push("  - " + t));
   }
-  if (P.rankNotes && P.rankNotes.length) {
-    parts.push(`\n## 分段修正（高分段经验在这里会失效，必须遵守）`);
-    P.rankNotes.forEach((t, i) => parts.push(`${i + 1}. ${t}`));
-  }
-  parts.push(`\n**核心要求**：你给的打法必须是**能自己独立完成**的（推塔、带线牵制、远程消耗），不要依赖队友配合。`);
   return parts.join("\n");
 }
 
