@@ -412,6 +412,35 @@ function analyze(){
 }
 function copyBrief(){ const b=document.getElementById("brief"); if(b) navigator.clipboard.writeText(b.innerText).then(()=>alert("已复制")); }
 
+// ==================== 后端可用性（让报错说人话）====================
+let BACKEND_STATE = null;   // null=未知 / true / false
+async function checkBackend(showMsg){
+  try{
+    const r = await fetch(API_BASE + "/api/status", {method:"GET"});
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    await r.json();
+    BACKEND_STATE = true;
+    return true;
+  }catch(e){
+    BACKEND_STATE = false;
+    if(showMsg){
+      alert("❌ 连不上共享后端（" + (API_BASE || location.origin) + "）\n\n"
+        + "常见原因：\n"
+        + "1. 本地服务没启动 → 双击「启动对局工具.vbs」，或手动运行 node tools/server.js\n"
+        + "2. 服务被关掉了 → 重新双击启动器\n"
+        + "3. 线上版 → 在「设置」里检查「共享后端地址」填对了没\n\n"
+        + "注意：连不上后端不影响 AI 分析（那是浏览器直连的），只是结果没法存进公共库。");
+    }
+    return false;
+  }
+}
+function backendErrMsg(e){
+  const base = API_BASE || location.origin;
+  return "连不上共享后端（" + base + "）\n\n"
+    + "→ 双击「启动对局工具.vbs」重启服务，然后刷新页面\n"
+    + "→ AI 分析不受影响（浏览器直连），只是结果存不进公共库\n\n"
+    + "技术细节：" + e.message;
+}
 // ==================== AI 直连（Key 只在浏览器，不上传）====================
 // 隐私设计：Key 存在 localStorage，请求直接从浏览器发往 AI 服务商，
 //          不经过任何中间服务器。
@@ -607,7 +636,7 @@ async function aiMatchup(force){
         out.textContent = (j.source==="user" ? `📌 这条是验证过的（${j.createdAt||""}）\n\n` : `⚡ 来自公共缓存（${j.createdAt||""}）\n\n`) + j.text;
         ensureFixBox(); if(btn) btn.disabled=false; return;
       }
-    }catch(e){ /* 服务器不可用就继续 */ }
+    }catch(e){ /* 后端不可用：静默跳过，继续走直连或本地引擎 */ }
     out.textContent = "⚠️ 你还没配置 API Key，公共缓存里也没有这个对位\n\n（去「设置」填 Key 就能用 AI）\n\n"
       + "──────── 以下是本地规则引擎（离线）────────\n\n"
       + localMatchup(c.myHero, foe.name, c.myLane);
@@ -623,7 +652,7 @@ async function aiMatchup(force){
         out.textContent = (j.source==="user" ? `📌 这条是验证过的（${j.createdAt||""}）\n\n` : `⚡ 来自公共缓存（${j.createdAt||""}）\n\n`) + j.text;
         ensureFixBox(); if(btn) btn.disabled=false; return;
       }
-    }catch(e){ /* 忽略，继续走直连 */ }
+    }catch(e){ /* 后端不可用：静默跳过缓存，直接走直连 */ }
   }
 
   // ---------- ③ 浏览器直连 AI（Key 不经过我们的服务器）----------
@@ -666,12 +695,27 @@ async function fixMatchup(){
   const out=document.getElementById("aiOut");
   const v=prompt("实际打起来是什么情况？\n（覆盖结论，下次同样对位直接调用你的；会共享给其他人）\n\n现在说的：\n"+out.textContent.slice(0,300));
   if(!v) return;
+  out.textContent = "保存中…";
   try{
+    // 先探测后端，让报错说人话
+    const ok = await checkBackend(false);
+    if(!ok){
+      out.textContent = "❌ 保存失败\n\n" + backendErrMsg(new Error("后端未响应"))
+        + "\n\n──────── 你的修正内容（先复制保存着）────────\n\n【实际】" + v;
+      return;
+    }
     const r=await api("/api/correct",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({a:k.a,b:k.b,lane:k.lane,text:"【实际】"+v})});
     const j=await r.json();
-    out.textContent = j.ok ? ("✅ 已存进共享数据库：\n\n【实际】"+v+"\n\n下次遇到同样对位会直接调用这条（你和别人都不用再问 AI）。") : "❌ 保存失败";
-  }catch(e){ out.textContent="❌ 保存失败："+e.message }
+    if(j.ok){
+      out.textContent = "✅ 已存进共享数据库：\n\n【实际】"+v+"\n\n下次遇到同样对位会直接调用这条（你和别人都不用再问 AI）。";
+    }else{
+      out.textContent = "❌ 保存失败：" + (j.error || "服务器返回异常") + "\n\n──────── 内容（先复制保存着）────────\n\n【实际】"+v;
+    }
+  }catch(e){
+    out.textContent = "❌ 保存失败\n\n" + backendErrMsg(e)
+      + "\n\n──────── 你的修正内容（先复制保存着）────────\n\n【实际】" + v;
+  }
 }
 
 function ensureFixBox(){
