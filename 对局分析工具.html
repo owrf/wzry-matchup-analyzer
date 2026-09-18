@@ -261,21 +261,68 @@ function enemyWeakpoints(enemy){
 }
 
 // ==================== 主分析 ====================
-function analyze(){
+function analyze(skipMirrorCheck){
   const enemy=LANES.map(l=>({lane:l,name:resolveName(val("e_"+l))})).filter(x=>x.name&&!x.name.startsWith("?"));
   const ally =LANES.map(l=>({lane:l,name:resolveName(val("a_"+l))})).filter(x=>x.name&&!x.name.startsWith("?"));
   const out=document.getElementById("out");
   if(!enemy.length){ out.innerHTML='<div class="empty">至少填敌方阵容</div>'; return; }
+
+  // ★ 检测同英雄（两边都有 / 同一边重复）
+  if(!skipMirrorCheck){
+    // 按名字全局对比（不管分路——同一个英雄可能被放在不同位置）
+    const bothSides = [...new Set(enemy.filter(e=>ally.some(a=>a.name===e.name)).map(e=>e.name))];
+    const dupInOne = [];
+    const chk = (arr, label) => {
+      const seen = {};
+      arr.forEach(x=>{ if(seen[x.name]) dupInOne.push(label + "的 " + x.name); seen[x.name]=1; });
+    };
+    chk(enemy, "敌方"); chk(ally, "我方");
+    if(bothSides.length || dupInOne.length){
+      window.__mirror = { bothSides, dupInOne };
+      const lanesOf = n => (LANE.heroLane[n] || ["未知"]);
+      let listHtml = "";
+      if(bothSides.length){
+        listHtml += bothSides.map(n=>{
+          const lv = lanesOf(n);
+          const hint = lv.length === 1
+            ? `只能打 ${lv[0]} —— 两边都是这个位置，多半是填错了`
+            : `可打 ${lv.join(" / ")} —— 双方可能放在不同位置，属于正常情况`;
+          return `· <b>${n}</b>　${hint}`;
+        }).join("<br>");
+      }
+      if(dupInOne.length) listHtml += (listHtml ? "<br>" : "") + "· 同一边重复：" + dupInOne.join("、") + "（填错了）";
+      document.getElementById("mirrorList").innerHTML = listHtml;
+      document.getElementById("mirrorModal").style.display = "flex";
+      return;   // 等用户选完再继续
+    }
+  }
 
   let myLane=val("myLane");
   const myHeroRaw=val("myHero").trim();
   const myHero=myHeroRaw?resolveName(myHeroRaw):"";
   if(!myLane&&myHero) myLane=(LANE.heroLane[myHero]||[])[0]||"";
 
+  // 同英雄模式的横幅提示
+  let mirrorBanner = "";
+  if(window.MIRROR_MODE === "pro"){
+    mirrorBanner = `<div class="card" style="border-left:4px solid #fbbf24;background:#1c1a0f">
+      <b style="color:#fbbf24">职业比赛 / 巅峰对决模式</b>
+      <div class="brief" style="margin-top:6px;font-size:13px">
+      同英雄对位是常态，重点不在"谁克制谁"，而在：<b>阵容怎么打、分带与团战的取舍、龙坑视野节奏、各自阵容的赢法</b>。
+      下面「逐位对位」里的优劣判定在这种局里参考价值有限。</div></div>`;
+  } else if(window.MIRROR_MODE === "ranked"){
+    mirrorBanner = `<div class="card" style="border-left:4px solid #fbbf24;background:#1c1a0f">
+      <b style="color:#fbbf24">镜像对线模式（同英雄同位置）</b>
+      <div class="brief" style="margin-top:6px;font-size:13px">
+      双方英雄一样，**没有英雄克制差异**，拼的是：<b>谁先手、谁能量/技能把握得好、谁先叫到打野</b>。
+      另外提醒：同英雄对决在匹配/排位里比较少见，如果填错了可以在上面改。</div></div>`;
+  }
+
   let html=`<div class="copybar"><button onclick="window.print()">打印</button><button onclick="copyBrief()">复制简报</button><button onclick="openSettings()" style="background:#475569">⚙️ 设置</button><span id="aiBadge" style="font-size:12px;color:#64748b;align-self:center;margin-left:auto"></span></div>`;
 
   // ① 双方强度
   const eW=windowStrength(enemy), aW=windowStrength(ally);
+  html += mirrorBanner;
   html+=`<h2>【一】双方强度</h2><div class="card"><div class="brief">`;
   html+=`<b>敌方</b>：${enemy.map(e=>e.name).join("、")}\n　类型：${compType(enemy).join("；")}\n　时间窗：前期 ${eW.early}　中期 ${eW.mid}　后期 ${eW.late}\n`;
   if(ally.length){
@@ -470,6 +517,54 @@ function allUserNotesText(limit){
   });
   return L.join("\n");
 }
+
+// 同英雄模式给 AI 的额外说明
+function mirrorText(){
+  if(window.MIRROR_MODE === "pro"){
+    return `
+# ⚠️⚠️ 这是【职业比赛 / 巅峰对决】的同英雄对局
+
+**输出必须以全局为主，不要以对位为主。** 按这个顺序写：
+
+第一段：**这局双方阵容各自怎么赢**（强势期、开团手段、分带能力、容错，各 1-2 句）
+第二段：**分带与团战的取舍** —— 什么时候该分带牵制、什么时候必须抱团
+第三段：**龙坑与视野节奏** —— 4 分钟、10 分钟这两个节点该怎么处理
+第四段：3-4 条具体做法（编号）
+最后：1-2 条注意点
+
+**禁止**：不要写"谁克制谁""谁更强"——同英雄没有克制差异。
+如果你要提对位，最多一句话带过，重点永远在全局。
+`;
+  }
+  if(window.MIRROR_MODE === "ranked"){
+    return `
+# ⚠️ 这是【匹配/排位】的同英雄镜像对线（双方同一个英雄，同位置）
+
+**没有英雄克制差异**，所以不要写"他克制你/你克制他"。
+
+分析重点（按这个顺序）：
+1. 这个英雄**自己**的强势期在哪、弱点在哪（既然双方一样，拼的是谁先做到）
+2. 兵线怎么处理：谁先清完、什么时候能上、什么时候会被抓
+3. 细节：能量/技能释放时机、关键技能的先后手
+4. 打野什么时候来、怎么配合
+最后 1-2 条注意点
+`;
+  }
+  return "";
+}
+// ==================== 同英雄对决：模式选择 ====================
+window.MIRROR_MODE = "";   // "" | pro | ranked
+function pickMirror(mode){
+  document.getElementById("mirrorModal").style.display = "none";
+  if(mode === "typo"){
+    // 只关弹窗，让用户去改阵容
+    window.MIRROR_MODE = "";
+    return;
+  }
+  window.MIRROR_MODE = mode;
+  analyze(true);   // 跳过检测，直接分析
+}
+
 // ==================== 该做什么（把判定翻译成动作）====================
 function actionOf(lane, verdict, myName, foeName){
   const v = verdict || "unknown";
@@ -575,6 +670,7 @@ function buildSystemPrompt(kind, matchup){
 ${pt ? "\n" + pt + "\n" : ""}
 ${P.common}
 ${un}
+${mirrorText()}
 
 # 硬性要求
 1. **严格依据给出的官方技能原文**，不编造数值或机制。
@@ -1061,5 +1157,34 @@ document.addEventListener("keydown",e=>{ if(e.ctrlKey&&e.key==="Enter") analyze(
     </div>
   </div>
 </div>
+
+<div id="mirrorModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:100;align-items:center;justify-content:center">
+  <div style="background:#161d2d;border:1px solid #2b4a7a;border-radius:10px;padding:24px;width:560px;max-width:92vw">
+    <h3 style="margin:0 0 10px;color:#fbbf24">⚠️ 双方有相同英雄</h3>
+    <div id="mirrorList" style="font-size:13px;color:#fca5a5;margin-bottom:14px;line-height:1.9"></div>
+    <div style="font-size:13px;color:#cbd5e1;line-height:1.9;margin-bottom:18px">
+      这局是哪种情况？<br>
+      <span style="color:#64748b;font-size:12px">两种情况要分析的东西完全不同，所以需要你确认。</span>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+      <button onclick="pickMirror('pro')" style="text-align:left;padding:14px;background:#0b111c;border:1px solid #2b3852;border-radius:8px;color:#dfe6f2;cursor:pointer;font-family:inherit;font-size:13px;line-height:1.7">
+        <b style="color:#7dd3fc">① 职业比赛 / 巅峰对决</b><br>
+        <span style="color:#94a3b8">同英雄对位是常态。要分析的是：这套阵容怎么打、分带与团战取舍、龙坑视野节奏、各自阵容的赢法</span>
+      </button>
+      <button onclick="pickMirror('ranked')" style="text-align:left;padding:14px;background:#0b111c;border:1px solid #2b3852;border-radius:8px;color:#dfe6f2;cursor:pointer;font-family:inherit;font-size:13px;line-height:1.7">
+        <b style="color:#7dd3fc">② 匹配 / 排位（同英雄同位置镜像对线）</b><br>
+        <span style="color:#94a3b8">要分析的是：对线强弱、谁先手、怎么抗压或压制、打野怎么来</span>
+      </button>
+      <button onclick="pickMirror('typo')" style="text-align:left;padding:12px;background:#0b111c;border:1px solid #2b3852;border-radius:8px;color:#fca5a5;cursor:pointer;font-family:inherit;font-size:13px;line-height:1.7">
+        <b>③ 填错了</b> —— 我改一下阵容
+      </button>
+    </div>
+    <div style="font-size:11px;color:#64748b">
+      提示：同一个英雄出现在**同一边**的两个位置，通常是填错了。
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
