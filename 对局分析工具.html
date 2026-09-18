@@ -289,23 +289,26 @@ function analyze(){
   html+=`</div></div>`;
 
   // ② 逐位对位（全部查数据库）
-  html+=`<h2>【二】逐位对位（查对位数据库）</h2><div class="card"><div class="brief">`;
+  html+=`<h2>【二】逐位对位：每条告诉你该做什么</h2><div class="card"><div class="brief">`;
   const rel={};
   LANES.forEach(l=>{
     const e=enemy.find(x=>x.lane===l), a=ally.find(x=>x.lane===l);
     if(e&&a){
       const r=lookup(a.name, e.name);
       rel[l]=r;
-      html+=`<b>${l}：${a.name} vs ${e.name}</b>\n`;
+      const ft=tag(e.name);
+      html+=`<b>${l}｜${a.name} vs ${e.name}</b>\n`;
+      html+=`　① 对的是：${e.name}（${ft.role}／${ft.dmg}伤／${ft.mob==="高"?"高机动":ft.mob==="低"?"低机动":"中机动"}／强势期 ${ft.spike}）\n`;
+      html+=`　② 他能做什么：${ft.note || "（暂无记录）"}\n`;
+      html+=`　③ **你该做什么：${actionOf(l, r?r.verdict:null, a.name, e.name)}**\n`;
       if(r){
-        html+=`　判定：${r.verdict==="win"?"✅ 我方占优":r.verdict==="lose"?"⚠️ 对方占优":"➖ 平线"}　*（来自「${r.source}」）*\n`;
-        html+=`　理由：${r.why}\n`;
-        html+=`　${verdictLine(l, r)}\n\n`;
+        html+=`　④ 注意：${r.why}\n`;
       } else {
-        html+=`　❓ 数据库未记录这条对位 → **这局打完告诉我结果，我补上**\n\n`;
+        html+=`　④ 注意：这条对位我还没可靠资料，**别当成定论**。打完在下面写下实际情况，会喂给 AI 学。\n`;
       }
+      html+=renderNote(l, a.name, e.name);
     } else if(e){
-      html+=`<b>${l}：对面 ${e.name}</b>（我方未填）\n\n`;
+      html+=`<b>${l}｜对面 ${e.name}</b>（我方未填）\n\n`;
     }
   });
   html+=`</div></div>`;
@@ -441,6 +444,89 @@ function backendErrMsg(e){
     + "→ AI 分析不受影响（浏览器直连），只是结果存不进公共库\n\n"
     + "技术细节：" + e.message;
 }
+
+// 取用户针对某个对位写下的分析（会作为"用户自己的说法"发给 AI）
+function userNoteFor(a, b){
+  const n = getUserNotes();
+  for(const k in n){
+    const parts = k.split("|");   // lane|A|B
+    if(parts.length !== 3) continue;
+    const [, x, y] = parts;
+    if((x===a && y===b) || (x===b && y===a)) return { lane:parts[0], text:n[k].text, at:n[k].at };
+  }
+  return null;
+}
+// 把用户所有笔记汇总（让 AI 学习用户的说法风格和观点）
+function allUserNotesText(limit){
+  const n = getUserNotes();
+  const keys = Object.keys(n);
+  if(!keys.length) return "";
+  const L = ["# 用户自己写过的对位分析（**这是他的说法，优先参考**）"];
+  L.push("用户是这个工具的作者，也是实战玩家。他写的判断比网上搜的可靠，请优先采用他的说法，并把他的表述风格学过来。");
+  L.push("");
+  keys.slice(-(limit||20)).forEach(k=>{
+    const [lane, a, b] = k.split("|");
+    L.push(`- 【${lane}】${a} vs ${b}：${n[k].text}`);
+  });
+  return L.join("\n");
+}
+// ==================== 该做什么（把判定翻译成动作）====================
+function actionOf(lane, verdict, myName, foeName){
+  const v = verdict || "unknown";
+  // 没资料时不给具体动作，避免误导
+  if(v === "unknown" || v === null){
+    return "这条对位我还没可靠资料 → 按常规打：补好尾刀、注意对面打野、别主动吃亏";
+  }
+  if(lane==="打野"){
+    if(v==="win")  return "前期进对面野区，压他发育；别让他安稳刷到关键装备";
+    if(v==="lose") return "守好自己野区，别被反；等他露头再决定做什么";
+    return "野区均势，看谁先动、哪边有辅助跟";
+  }
+  if(lane==="游走"){
+    if(v==="win")  return "主动做视野、找开团机会，帮中路抢线";
+    if(v==="lose") return "先保住视野，别被强开；跟紧自家C位";
+    return "看谁跟得上打野，别单独走";
+  }
+  if(lane==="中路"){
+    if(v==="win")  return "抢线先动，帮边路或者跟打野打节奏";
+    if(v==="lose") return "别硬抢中线，退守补刀；等打野来帮再动";
+    return "看谁先清完，谁先动";
+  }
+  if(lane==="发育路"){
+    if(v==="win")  return "可以压塔、控河道资源";
+    if(v==="lose") return "单人抗压，让辅助走；补好尾刀别掉经验";
+    return "看辅助跟不跟";
+  }
+  // 对抗路
+  if(v==="win")  return "可以压线抢线权，但压线要防对面打野";
+  if(v==="lose") return "抗压：做护甲鞋过渡，补好尾刀，叫打野来帮；别主动换血";
+  return "平线：谁也压不住谁，把线处理干净，靠支援和团战分胜负";
+}
+
+// ==================== 用户自己的分析（本地笔记）====================
+function getUserNotes(){
+  try { return JSON.parse(localStorage.getItem("userMatchupNotes") || "{}"); } catch(e){ return {}; }
+}
+function noteKey(lane, a, b){ return lane + "|" + a + "|" + b; }
+function saveUserNote(k, v){
+  const n = getUserNotes();
+  if(v && v.trim()) n[k] = { text: v.trim(), at: new Date().toISOString().slice(0,16).replace("T"," ") };
+  else delete n[k];
+  try { localStorage.setItem("userMatchupNotes", JSON.stringify(n)); } catch(e){}
+}
+function renderNote(lane, a, b){
+  const k = noteKey(lane, a, b);
+  const n = getUserNotes()[k];
+  const esc = s => String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  return `<div style="margin:6px 0 12px;padding:8px 10px;background:#0b111c;border-radius:6px">
+    <div style="font-size:11px;color:#64748b;margin-bottom:5px">📝 你自己的分析（会喂给 AI 学习，存在本机）</div>
+    <textarea data-nk="${esc(k)}" placeholder="例：他二技能冷却长，交完就能上去换血；我有能量就先手"
+      style="width:100%;min-height:80px;background:#060a12;border:1px solid #2b3852;color:#dfe6f2;border-radius:4px;padding:6px;font-size:12px;font-family:inherit"
+      onchange="saveUserNote(this.dataset.nk, this.value)">${esc(n ? n.text : "")}</textarea>
+    ${n ? `<div style="font-size:10px;color:#475569;margin-top:3px">已保存 ${esc(n.at)}（会作为你的说法发给 AI）</div>` : ""}
+  </div>`;
+}
+
 // ==================== AI 直连（Key 只在浏览器，不上传）====================
 // 隐私设计：Key 存在 localStorage，请求直接从浏览器发往 AI 服务商，
 //          不经过任何中间服务器。
@@ -475,12 +561,20 @@ function profileText(){
 }
 
 // 组装系统提示词（通用方法论来自 promptdata.js；个人档案来自浏览器本地）
-function buildSystemPrompt(kind){
+function buildSystemPrompt(kind, matchup){
   const P = window.PROMPT_DATA || { common:"" };
   const pt = profileText();
+  // ★ 用户自己的说法（优先参考）；没有的话就带上全部笔记让他学
+  let un = "";
+  if(matchup && matchup[0] && matchup[1]){
+    const one = userNoteFor(matchup[0], matchup[1]);
+    if(one) un = `\\n# 用户对这条对位的原话（**这是他的实战结论，优先采用**）\\n- 【${one.lane}】${matchup[0]} vs ${matchup[1]}：${one.text}\\n`;
+    else un = allUserNotesText(12) ? "\\n" + allUserNotesText(12) + "\\n" : "";
+  }
   const base = `你是王者荣耀的高分教练。给玩家做对局指导。
 ${pt ? "\n" + pt + "\n" : ""}
 ${P.common}
+${un}
 
 # 硬性要求
 1. **严格依据给出的官方技能原文**，不编造数值或机制。
@@ -700,7 +794,7 @@ ${heroBriefLocal(foe.name)}
 ${existingLocal(c.myHero, foe.name)}
 
 按格式分析。`;
-  const res = await callAIDirect(buildSystemPrompt("match"), prompt, 1200);
+  const res = await callAIDirect(buildSystemPrompt("match", [c.myHero, foe.name]), prompt, 1200);
   if(res.error === "NO_KEY"){
     out.textContent = "⚠️ 没读到本地 Key，请去「设置」重新填写";
     if(btn) btn.disabled=false; return;
